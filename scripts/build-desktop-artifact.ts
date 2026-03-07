@@ -169,6 +169,7 @@ interface StagePackageJson {
   readonly t3codeCommitHash: string;
   readonly private: true;
   readonly description: string;
+  readonly homepage: string;
   readonly author: string;
   readonly main: string;
   readonly build: Record<string, unknown>;
@@ -331,7 +332,9 @@ function stageMacIcons(stageResourcesDir: string, verbose: boolean) {
   });
 }
 
-function stageLinuxIcons(stageResourcesDir: string) {
+const LINUX_ICON_SIZES = [16, 32, 48, 64, 128, 256, 512] as const;
+
+function stageLinuxIcons(stageResourcesDir: string, verbose: boolean) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -342,8 +345,16 @@ function stageLinuxIcons(stageResourcesDir: string) {
       });
     }
 
-    const iconPath = path.join(stageResourcesDir, "icon.png");
-    yield* fs.copyFile(iconSource, iconPath);
+    const iconsDir = path.join(stageResourcesDir, "icons");
+    yield* fs.makeDirectory(iconsDir, { recursive: true });
+
+    for (const size of LINUX_ICON_SIZES) {
+      yield* runCommand(
+        ChildProcess.make({
+          ...commandOutputOptions(verbose),
+        })`convert ${iconSource} -resize ${`${size}x${size}`} ${path.join(iconsDir, `${size}x${size}.png`)}`,
+      );
+    }
   });
 }
 
@@ -470,8 +481,9 @@ const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "linux") {
     buildConfig.linux = {
       target: [target],
-      icon: "icon.png",
+      icon: "icons",
       category: "Development",
+      maintainer: "T3 Tools <hello@t3.chat>",
     };
   }
 
@@ -500,7 +512,7 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
   }
 
   if (platform === "linux") {
-    yield* stageLinuxIcons(stageResourcesDir);
+    yield* stageLinuxIcons(stageResourcesDir, verbose);
     return;
   }
 
@@ -617,6 +629,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     t3codeCommitHash: commitHash,
     private: true,
     description: "T3 Code desktop build",
+    homepage: "https://t3.chat",
     author: "T3 Tools",
     main: "apps/desktop/dist-electron/main.js",
     build: yield* createBuildConfig(
