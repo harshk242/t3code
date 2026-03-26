@@ -1,8 +1,10 @@
 import { Schema, Struct } from "effect";
-import { ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas";
+import { NonNegativeInt, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas";
 
 import {
   ClientOrchestrationCommand,
+  OrchestrationEvent,
+  ORCHESTRATION_WS_CHANNELS,
   OrchestrationGetFullThreadDiffInput,
   ORCHESTRATION_WS_METHODS,
   OrchestrationGetSnapshotInput,
@@ -10,12 +12,15 @@ import {
   OrchestrationReplayEventsInput,
 } from "./orchestration";
 import {
+  GitActionProgressEvent,
   GitCheckoutInput,
   GitCreateBranchInput,
+  GitPreparePullRequestThreadInput,
   GitCreateWorktreeInput,
   GitInitInput,
   GitListBranchesInput,
   GitPullInput,
+  GitPullRequestRefInput,
   GitRemoveWorktreeInput,
   GitRunStackedActionInput,
   GitStatusInput,
@@ -23,6 +28,7 @@ import {
 import {
   TerminalClearInput,
   TerminalCloseInput,
+  TerminalEvent,
   TerminalOpenInput,
   TerminalResizeInput,
   TerminalRestartInput,
@@ -31,6 +37,8 @@ import {
 import { KeybindingRule } from "./keybindings";
 import { ProjectSearchEntriesInput, ProjectWriteFileInput } from "./project";
 import { OpenInEditorInput } from "./editor";
+import { ServerConfigUpdatedPayload, ServerProviderUpdatedPayload } from "./server";
+import { ServerSettingsPatch } from "./settings";
 
 // ── WebSocket RPC Method Names ───────────────────────────────────────
 
@@ -55,6 +63,8 @@ export const WS_METHODS = {
   gitCreateBranch: "git.createBranch",
   gitCheckout: "git.checkout",
   gitInit: "git.init",
+  gitResolvePullRequest: "git.resolvePullRequest",
+  gitPreparePullRequestThread: "git.preparePullRequestThread",
 
   // Terminal methods
   terminalOpen: "terminal.open",
@@ -66,15 +76,20 @@ export const WS_METHODS = {
 
   // Server meta
   serverGetConfig: "server.getConfig",
+  serverRefreshProviders: "server.refreshProviders",
   serverUpsertKeybinding: "server.upsertKeybinding",
+  serverGetSettings: "server.getSettings",
+  serverUpdateSettings: "server.updateSettings",
 } as const;
 
 // ── Push Event Channels ──────────────────────────────────────────────
 
 export const WS_CHANNELS = {
+  gitActionProgress: "git.actionProgress",
   terminalEvent: "terminal.event",
   serverWelcome: "server.welcome",
   serverConfigUpdated: "server.configUpdated",
+  serverProvidersUpdated: "server.providersUpdated",
 } as const;
 
 // -- Tagged Union of all request body schemas ─────────────────────────
@@ -117,6 +132,8 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.gitCreateBranch, GitCreateBranchInput),
   tagRequestBody(WS_METHODS.gitCheckout, GitCheckoutInput),
   tagRequestBody(WS_METHODS.gitInit, GitInitInput),
+  tagRequestBody(WS_METHODS.gitResolvePullRequest, GitPullRequestRefInput),
+  tagRequestBody(WS_METHODS.gitPreparePullRequestThread, GitPreparePullRequestThreadInput),
 
   // Terminal methods
   tagRequestBody(WS_METHODS.terminalOpen, TerminalOpenInput),
@@ -128,7 +145,10 @@ const WebSocketRequestBody = Schema.Union([
 
   // Server meta
   tagRequestBody(WS_METHODS.serverGetConfig, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.serverRefreshProviders, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverUpsertKeybinding, KeybindingRule),
+  tagRequestBody(WS_METHODS.serverGetSettings, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.serverUpdateSettings, Schema.Struct({ patch: ServerSettingsPatch })),
 ]);
 
 export const WebSocketRequest = Schema.Struct({
@@ -148,19 +168,8 @@ export const WebSocketResponse = Schema.Struct({
 });
 export type WebSocketResponse = typeof WebSocketResponse.Type;
 
-export const WsPush = Schema.Struct({
-  type: Schema.Literal("push"),
-  channel: TrimmedNonEmptyString,
-  data: Schema.Unknown,
-});
-export type WsPush = typeof WsPush.Type;
-
-// ── Union of all server → client messages ─────────────────────────────
-
-export const WsResponse = Schema.Union([WebSocketResponse, WsPush]);
-export type WsResponse = typeof WsResponse.Type;
-
-// ── Server welcome payload ───────────────────────────────────────────
+export const WsPushSequence = NonNegativeInt;
+export type WsPushSequence = typeof WsPushSequence.Type;
 
 export const WsWelcomePayload = Schema.Struct({
   cwd: TrimmedNonEmptyString,
@@ -169,3 +178,80 @@ export const WsWelcomePayload = Schema.Struct({
   bootstrapThreadId: Schema.optional(ThreadId),
 });
 export type WsWelcomePayload = typeof WsWelcomePayload.Type;
+
+export interface WsPushPayloadByChannel {
+  readonly [WS_CHANNELS.serverWelcome]: WsWelcomePayload;
+  readonly [WS_CHANNELS.serverConfigUpdated]: typeof ServerConfigUpdatedPayload.Type;
+  readonly [WS_CHANNELS.serverProvidersUpdated]: typeof ServerProviderUpdatedPayload.Type;
+  readonly [WS_CHANNELS.gitActionProgress]: typeof GitActionProgressEvent.Type;
+  readonly [WS_CHANNELS.terminalEvent]: typeof TerminalEvent.Type;
+  readonly [ORCHESTRATION_WS_CHANNELS.domainEvent]: OrchestrationEvent;
+}
+
+export type WsPushChannel = keyof WsPushPayloadByChannel;
+export type WsPushData<C extends WsPushChannel> = WsPushPayloadByChannel[C];
+
+const makeWsPushSchema = <const Channel extends string, Payload extends Schema.Schema<any>>(
+  channel: Channel,
+  payload: Payload,
+) =>
+  Schema.Struct({
+    type: Schema.Literal("push"),
+    sequence: WsPushSequence,
+    channel: Schema.Literal(channel),
+    data: payload,
+  });
+
+export const WsPushServerWelcome = makeWsPushSchema(WS_CHANNELS.serverWelcome, WsWelcomePayload);
+export const WsPushServerConfigUpdated = makeWsPushSchema(
+  WS_CHANNELS.serverConfigUpdated,
+  ServerConfigUpdatedPayload,
+);
+export const WsPushServerProvidersUpdated = makeWsPushSchema(
+  WS_CHANNELS.serverProvidersUpdated,
+  ServerProviderUpdatedPayload,
+);
+export const WsPushGitActionProgress = makeWsPushSchema(
+  WS_CHANNELS.gitActionProgress,
+  GitActionProgressEvent,
+);
+export const WsPushTerminalEvent = makeWsPushSchema(WS_CHANNELS.terminalEvent, TerminalEvent);
+export const WsPushOrchestrationDomainEvent = makeWsPushSchema(
+  ORCHESTRATION_WS_CHANNELS.domainEvent,
+  OrchestrationEvent,
+);
+
+export const WsPushChannelSchema = Schema.Literals([
+  WS_CHANNELS.gitActionProgress,
+  WS_CHANNELS.serverWelcome,
+  WS_CHANNELS.serverConfigUpdated,
+  WS_CHANNELS.serverProvidersUpdated,
+  WS_CHANNELS.terminalEvent,
+  ORCHESTRATION_WS_CHANNELS.domainEvent,
+]);
+export type WsPushChannelSchema = typeof WsPushChannelSchema.Type;
+
+export const WsPush = Schema.Union([
+  WsPushServerWelcome,
+  WsPushServerConfigUpdated,
+  WsPushServerProvidersUpdated,
+  WsPushGitActionProgress,
+  WsPushTerminalEvent,
+  WsPushOrchestrationDomainEvent,
+]);
+export type WsPush = typeof WsPush.Type;
+
+export type WsPushMessage<C extends WsPushChannel> = Extract<WsPush, { channel: C }>;
+
+export const WsPushEnvelopeBase = Schema.Struct({
+  type: Schema.Literal("push"),
+  sequence: WsPushSequence,
+  channel: WsPushChannelSchema,
+  data: Schema.Unknown,
+});
+export type WsPushEnvelopeBase = typeof WsPushEnvelopeBase.Type;
+
+// ── Union of all server → client messages ─────────────────────────────
+
+export const WsResponse = Schema.Union([WebSocketResponse, WsPush]);
+export type WsResponse = typeof WsResponse.Type;

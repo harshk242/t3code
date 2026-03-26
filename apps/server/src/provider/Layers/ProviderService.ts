@@ -10,6 +10,7 @@
  * @module ProviderServiceLive
  */
 import {
+  ModelSelection,
   NonNegativeInt,
   ThreadId,
   ProviderInterruptTurnInput,
@@ -32,6 +33,7 @@ import {
 } from "../Services/ProviderSessionDirectory.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { AnalyticsService } from "../../telemetry/Services/AnalyticsService.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 
 export interface ProviderServiceLiveOptions {
   readonly canonicalEventLogPath?: string;
@@ -86,13 +88,35 @@ function toRuntimeStatus(session: ProviderSession): "starting" | "running" | "st
   }
 }
 
-function toRuntimePayloadFromSession(session: ProviderSession): Record<string, unknown> {
+function toRuntimePayloadFromSession(
+  session: ProviderSession,
+  extra?: {
+    readonly modelSelection?: unknown;
+    readonly lastRuntimeEvent?: string;
+    readonly lastRuntimeEventAt?: string;
+  },
+): Record<string, unknown> {
   return {
     cwd: session.cwd ?? null,
     model: session.model ?? null,
     activeTurnId: session.activeTurnId ?? null,
     lastError: session.lastError ?? null,
+    ...(extra?.modelSelection !== undefined ? { modelSelection: extra.modelSelection } : {}),
+    ...(extra?.lastRuntimeEvent !== undefined ? { lastRuntimeEvent: extra.lastRuntimeEvent } : {}),
+    ...(extra?.lastRuntimeEventAt !== undefined
+      ? { lastRuntimeEventAt: extra.lastRuntimeEventAt }
+      : {}),
   };
+}
+
+function readPersistedModelSelection(
+  runtimePayload: ProviderRuntimeBinding["runtimePayload"],
+): ModelSelection | undefined {
+  if (!runtimePayload || typeof runtimePayload !== "object" || Array.isArray(runtimePayload)) {
+    return undefined;
+  }
+  const raw = "modelSelection" in runtimePayload ? runtimePayload.modelSelection : undefined;
+  return Schema.is(ModelSelection)(raw) ? raw : undefined;
 }
 
 function readPersistedCwd(
@@ -110,6 +134,7 @@ function readPersistedCwd(
 const makeProviderService = (options?: ProviderServiceLiveOptions) =>
   Effect.gen(function* () {
     const analytics = yield* Effect.service(AnalyticsService);
+    const serverSettings = yield* ServerSettingsService;
     const canonicalEventLogger =
       options?.canonicalEventLogger ??
       (options?.canonicalEventLogPath !== undefined
@@ -126,9 +151,7 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
     const publishRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
       Effect.succeed(event).pipe(
         Effect.tap((canonicalEvent) =>
-          canonicalEventLogger
-            ? canonicalEventLogger.write(canonicalEvent, null)
-            : Effect.void,
+          canonicalEventLogger ? canonicalEventLogger.write(canonicalEvent, null) : Effect.void,
         ),
         Effect.flatMap((canonicalEvent) => PubSub.publish(runtimeEventPubSub, canonicalEvent)),
         Effect.asVoid,
@@ -137,6 +160,11 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
     const upsertSessionBinding = (
       session: ProviderSession,
       threadId: ThreadId,
+      extra?: {
+        readonly modelSelection?: unknown;
+        readonly lastRuntimeEvent?: string;
+        readonly lastRuntimeEventAt?: string;
+      },
     ) =>
       directory.upsert({
         threadId,
@@ -144,14 +172,13 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         runtimeMode: session.runtimeMode,
         status: toRuntimeStatus(session),
         ...(session.resumeCursor !== undefined ? { resumeCursor: session.resumeCursor } : {}),
-        runtimePayload: toRuntimePayloadFromSession(session),
+        runtimePayload: toRuntimePayloadFromSession(session, extra),
       });
 
     const providers = yield* registry.listProviders();
     const adapters = yield* Effect.forEach(providers, (provider) =>
       registry.getByProvider(provider),
     );
-
     const processRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
       publishRuntimeEvent(event);
 
@@ -177,7 +204,9 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         const hasActiveSession = yield* adapter.hasSession(input.binding.threadId);
         if (hasActiveSession) {
           const activeSessions = yield* adapter.listSessions();
-          const existing = activeSessions.find((session) => session.threadId === input.binding.threadId);
+          const existing = activeSessions.find(
+            (session) => session.threadId === input.binding.threadId,
+          );
           if (existing) {
             yield* upsertSessionBinding(existing, input.binding.threadId);
             yield* analytics.record("provider.session.recovered", {
@@ -197,11 +226,13 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         }
 
         const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
+        const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
 
         const resumed = yield* adapter.startSession({
           threadId: input.binding.threadId,
           provider: input.binding.provider,
           ...(persistedCwd ? { cwd: persistedCwd } : {}),
+          ...(persistedModelSelection ? { modelSelection: persistedModelSelection } : {}),
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
           runtimeMode: input.binding.runtimeMode ?? "full-access",
         });
@@ -263,8 +294,32 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
           threadId,
           provider: parsed.provider ?? "codex",
         };
+        const settings = yield* serverSettings.getSettings.pipe(
+          Effect.mapError((error) =>
+            toValidationError(
+              "ProviderService.startSession",
+              `Failed to load provider settings: ${error.message}`,
+              error,
+            ),
+          ),
+        );
+        if (!settings.providers[input.provider].enabled) {
+          return yield* toValidationError(
+            "ProviderService.startSession",
+            `Provider '${input.provider}' is disabled in T3 Code settings.`,
+          );
+        }
+        const persistedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));
+        const effectiveResumeCursor =
+          input.resumeCursor ??
+          (persistedBinding?.provider === input.provider
+            ? persistedBinding.resumeCursor
+            : undefined);
         const adapter = yield* registry.getByProvider(input.provider);
-        const session = yield* adapter.startSession(input);
+        const session = yield* adapter.startSession({
+          ...input,
+          ...(effectiveResumeCursor !== undefined ? { resumeCursor: effectiveResumeCursor } : {}),
+        });
 
         if (session.provider !== adapter.provider) {
           return yield* toValidationError(
@@ -273,13 +328,17 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
           );
         }
 
-        yield* upsertSessionBinding(session, threadId);
+        yield* upsertSessionBinding(session, threadId, {
+          modelSelection: input.modelSelection,
+        });
         yield* analytics.record("provider.session.started", {
           provider: session.provider,
           runtimeMode: input.runtimeMode,
           hasResumeCursor: session.resumeCursor !== undefined,
           hasCwd: typeof input.cwd === "string" && input.cwd.trim().length > 0,
-          hasModel: typeof input.model === "string" && input.model.trim().length > 0,
+          hasModel:
+            typeof input.modelSelection?.model === "string" &&
+            input.modelSelection.model.trim().length > 0,
         });
 
         return session;
@@ -315,6 +374,7 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
           status: "running",
           ...(turn.resumeCursor !== undefined ? { resumeCursor: turn.resumeCursor } : {}),
           runtimePayload: {
+            ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
             activeTurnId: turn.turnId,
             lastRuntimeEvent: "provider.sendTurn",
             lastRuntimeEventAt: new Date().toISOString(),
@@ -322,7 +382,7 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         });
         yield* analytics.record("provider.turn.sent", {
           provider: routed.adapter.provider,
-          model: input.model,
+          model: input.modelSelection?.model,
           interactionMode: input.interactionMode,
           attachmentCount: input.attachments.length,
           hasInput: typeof input.input === "string" && input.input.trim().length > 0,
@@ -405,23 +465,23 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
 
     const listSessions: ProviderServiceShape["listSessions"] = () =>
       Effect.gen(function* () {
-        const sessionsByProvider = yield* Effect.forEach(adapters, (adapter) => adapter.listSessions());
+        const sessionsByProvider = yield* Effect.forEach(adapters, (adapter) =>
+          adapter.listSessions(),
+        );
         const activeSessions = sessionsByProvider.flatMap((sessions) => sessions);
-        const persistedBindings = yield* directory
-          .listThreadIds()
-          .pipe(
-            Effect.flatMap((threadIds) =>
-              Effect.forEach(
-                threadIds,
-                (threadId) =>
-                  directory.getBinding(threadId).pipe(
-                    Effect.orElseSucceed(() => Option.none<ProviderRuntimeBinding>()),
-                  ),
-                { concurrency: "unbounded" },
-              ),
+        const persistedBindings = yield* directory.listThreadIds().pipe(
+          Effect.flatMap((threadIds) =>
+            Effect.forEach(
+              threadIds,
+              (threadId) =>
+                directory
+                  .getBinding(threadId)
+                  .pipe(Effect.orElseSucceed(() => Option.none<ProviderRuntimeBinding>())),
+              { concurrency: "unbounded" },
             ),
-            Effect.orElseSucceed(() => [] as Array<Option.Option<ProviderRuntimeBinding>>),
-          );
+          ),
+          Effect.orElseSucceed(() => [] as Array<Option.Option<ProviderRuntimeBinding>>),
+        );
         const bindingsByThreadId = new Map<ThreadId, ProviderRuntimeBinding>();
         for (const bindingOption of persistedBindings) {
           const binding = Option.getOrUndefined(bindingOption);
@@ -478,6 +538,17 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
     const runStopAll = () =>
       Effect.gen(function* () {
         const threadIds = yield* directory.listThreadIds();
+        const activeSessions = yield* Effect.forEach(adapters, (adapter) =>
+          adapter.listSessions(),
+        ).pipe(
+          Effect.map((sessionsByAdapter) => sessionsByAdapter.flatMap((sessions) => sessions)),
+        );
+        yield* Effect.forEach(activeSessions, (session) =>
+          upsertSessionBinding(session, session.threadId, {
+            lastRuntimeEvent: "provider.stopAll",
+            lastRuntimeEventAt: new Date().toISOString(),
+          }),
+        ).pipe(Effect.asVoid);
         yield* Effect.forEach(adapters, (adapter) => adapter.stopAll()).pipe(Effect.asVoid);
         yield* Effect.forEach(threadIds, (threadId) =>
           directory.getProvider(threadId).pipe(
@@ -517,7 +588,12 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
       listSessions,
       getCapabilities,
       rollbackConversation,
-      streamEvents: Stream.fromPubSub(runtimeEventPubSub),
+      // Each access creates a fresh PubSub subscription so that multiple
+      // consumers (ProviderRuntimeIngestion, CheckpointReactor, etc.) each
+      // independently receive all runtime events.
+      get streamEvents(): ProviderServiceShape["streamEvents"] {
+        return Stream.fromPubSub(runtimeEventPubSub);
+      },
     } satisfies ProviderServiceShape;
   });
 

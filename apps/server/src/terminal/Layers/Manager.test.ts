@@ -6,6 +6,7 @@ import {
   DEFAULT_TERMINAL_ID,
   type TerminalEvent,
   type TerminalOpenInput,
+  type TerminalRestartInput,
 } from "@t3tools/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -125,6 +126,16 @@ function waitFor(predicate: () => boolean, timeoutMs = 800): Promise<void> {
 }
 
 function openInput(overrides: Partial<TerminalOpenInput> = {}): TerminalOpenInput {
+  return {
+    threadId: "thread-1",
+    cwd: process.cwd(),
+    cols: 100,
+    rows: 24,
+    ...overrides,
+  };
+}
+
+function restartInput(overrides: Partial<TerminalRestartInput> = {}): TerminalRestartInput {
   return {
     threadId: "thread-1",
     cwd: process.cwd(),
@@ -361,7 +372,7 @@ describe("TerminalManager", () => {
     firstProcess.emitData("before restart\n");
     await waitFor(() => fs.existsSync(historyLogPath(logsDir)));
 
-    const snapshot = await manager.restart(openInput());
+    const snapshot = await manager.restart(restartInput());
     expect(snapshot.history).toBe("");
     expect(snapshot.status).toBe("running");
     expect(ptyAdapter.spawnInputs).toHaveLength(2);
@@ -454,6 +465,89 @@ describe("TerminalManager", () => {
     const reopened = await manager.open(openInput());
     const nonEmptyLines = reopened.history.split("\n").filter((line) => line.length > 0);
     expect(nonEmptyLines).toEqual(["line2", "line3", "line4"]);
+
+    manager.dispose();
+  });
+
+  it("strips replay-unsafe terminal query and reply sequences from persisted history", async () => {
+    const { manager, ptyAdapter } = makeManager();
+    await manager.open(openInput());
+    const process = ptyAdapter.processes[0];
+    expect(process).toBeDefined();
+    if (!process) return;
+
+    process.emitData("prompt ");
+    process.emitData("\u001b[32mok\u001b[0m ");
+    process.emitData("\u001b]11;rgb:ffff/ffff/ffff\u0007");
+    process.emitData("\u001b[1;1R");
+    process.emitData("done\n");
+
+    await manager.close({ threadId: "thread-1" });
+
+    const reopened = await manager.open(openInput());
+    expect(reopened.history).toBe("prompt \u001b[32mok\u001b[0m done\n");
+
+    manager.dispose();
+  });
+
+  it("preserves clear and style control sequences while dropping chunk-split query traffic", async () => {
+    const { manager, ptyAdapter } = makeManager();
+    await manager.open(openInput());
+    const process = ptyAdapter.processes[0];
+    expect(process).toBeDefined();
+    if (!process) return;
+
+    process.emitData("before clear\n");
+    process.emitData("\u001b[H\u001b[2J");
+    process.emitData("prompt ");
+    process.emitData("\u001b]11;");
+    process.emitData("rgb:ffff/ffff/ffff\u0007\u001b[1;1");
+    process.emitData("R\u001b[36mdone\u001b[0m\n");
+
+    await manager.close({ threadId: "thread-1" });
+
+    const reopened = await manager.open(openInput());
+    expect(reopened.history).toBe(
+      "before clear\n\u001b[H\u001b[2Jprompt \u001b[36mdone\u001b[0m\n",
+    );
+
+    manager.dispose();
+  });
+
+  it("does not leak final bytes from ESC sequences with intermediate bytes", async () => {
+    const { manager, ptyAdapter } = makeManager();
+    await manager.open(openInput());
+    const process = ptyAdapter.processes[0];
+    expect(process).toBeDefined();
+    if (!process) return;
+
+    process.emitData("before ");
+    process.emitData("\u001b(B");
+    process.emitData("after\n");
+
+    await manager.close({ threadId: "thread-1" });
+
+    const reopened = await manager.open(openInput());
+    expect(reopened.history).toBe("before \u001b(Bafter\n");
+
+    manager.dispose();
+  });
+
+  it("preserves chunk-split ESC sequences with intermediate bytes without leaking final bytes", async () => {
+    const { manager, ptyAdapter } = makeManager();
+    await manager.open(openInput());
+    const process = ptyAdapter.processes[0];
+    expect(process).toBeDefined();
+    if (!process) return;
+
+    process.emitData("before ");
+    process.emitData("\u001b(");
+    process.emitData("Bafter\n");
+
+    await manager.close({ threadId: "thread-1" });
+
+    const reopened = await manager.open(openInput());
+    expect(reopened.history).toBe("before \u001b(Bafter\n");
 
     manager.dispose();
   });
