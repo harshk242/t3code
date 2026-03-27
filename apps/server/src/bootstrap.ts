@@ -117,7 +117,21 @@ const makeBootstrapInputStream = (fd: number) =>
         return stream;
       }
 
-      const streamFd = NFS.openSync(fdPath, "r");
+      let streamFd: number;
+      try {
+        streamFd = NFS.openSync(fdPath, "r");
+      } catch (err: unknown) {
+        if (err instanceof Error && "code" in err && err.code === "ENXIO") {
+          // Linux: anonymous pipes cannot be re-opened via /proc/self/fd/N.
+          // Fall back to reading the inherited fd directly.
+          return NFS.createReadStream("", {
+            fd,
+            encoding: "utf8",
+            autoClose: false,
+          });
+        }
+        throw err;
+      }
       return NFS.createReadStream("", {
         fd: streamFd,
         encoding: "utf8",

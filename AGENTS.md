@@ -45,6 +45,10 @@ Docs:
 
 - Codex App Server docs: https://developers.openai.com/codex/sdk/#app-server
 
+## Debugging
+
+When debugging the live app, logs are written to directory `~/.t3/userdata/logs/`.
+
 ## Reference Repos
 
 - Open-source Codex repo: https://github.com/openai/codex
