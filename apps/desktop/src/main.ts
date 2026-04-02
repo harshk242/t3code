@@ -269,6 +269,8 @@ function captureBackendOutput(child: ChildProcess.ChildProcess): void {
 initializePackagedLogging();
 
 if (process.platform === "linux") {
+  // GNOME/Ubuntu launcher matching also consults the Chromium desktop file id.
+  process.env.CHROME_DESKTOP = LINUX_DESKTOP_ENTRY_NAME;
   app.commandLine.appendSwitch("class", LINUX_WM_CLASS);
 }
 
@@ -712,7 +714,7 @@ function resolveUserDataPath(): string {
 }
 
 function configureAppIdentity(): void {
-  app.setName(APP_DISPLAY_NAME);
+  app.setName(process.platform === "linux" ? LINUX_WM_CLASS : APP_DISPLAY_NAME);
   const commitHash = resolveAboutCommitHash();
   app.setAboutPanelOptions({
     applicationName: APP_DISPLAY_NAME,

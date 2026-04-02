@@ -178,6 +178,7 @@ interface StagePackageJson {
   readonly homepage: string;
   readonly author: string;
   readonly main: string;
+  readonly desktopName?: string;
   readonly build: Record<string, unknown>;
   readonly dependencies: Record<string, unknown>;
   readonly devDependencies: {
@@ -370,6 +371,9 @@ function stageLinuxIcons(stageResourcesDir: string, verbose: boolean) {
 
     const iconsDir = path.join(stageResourcesDir, "icons");
     yield* fs.makeDirectory(iconsDir, { recursive: true });
+
+    // Electron still uses a root icon.png for the running window icon on Linux.
+    yield* fs.copyFile(iconSource, path.join(stageResourcesDir, "icon.png"));
 
     for (const size of LINUX_ICON_SIZES) {
       yield* runCommand(
@@ -675,6 +679,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     homepage: "https://t3.chat",
     author: "T3 Tools",
     main: "apps/desktop/dist-electron/main.js",
+    ...(options.platform === "linux" ? { desktopName: "t3code.desktop" } : {}),
     build: yield* createBuildConfig(
       options.platform,
       options.target,
