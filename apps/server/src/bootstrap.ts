@@ -108,35 +108,26 @@ const makeBootstrapInputStream = (fd: number) =>
     try: () => {
       const fdPath = resolveFdPath(fd);
       if (fdPath === undefined) {
-        const stream = new Net.Socket({
-          fd,
-          readable: true,
-          writable: false,
-        });
-        stream.setEncoding("utf8");
-        return stream;
+        return makeDirectBootstrapStream(fd);
       }
 
-      let streamFd: number;
+      let streamFd: number | undefined;
       try {
         streamFd = NFS.openSync(fdPath, "r");
-      } catch (err: unknown) {
-        if (err instanceof Error && "code" in err && err.code === "ENXIO") {
-          // Linux: anonymous pipes cannot be re-opened via /proc/self/fd/N.
-          // Fall back to reading the inherited fd directly.
-          return NFS.createReadStream("", {
-            fd,
-            encoding: "utf8",
-            autoClose: false,
-          });
+        return NFS.createReadStream("", {
+          fd: streamFd,
+          encoding: "utf8",
+          autoClose: true,
+        });
+      } catch (error) {
+        if (isBootstrapFdPathDuplicationError(error)) {
+          if (streamFd !== undefined) {
+            NFS.closeSync(streamFd);
+          }
+          return makeDirectBootstrapStream(fd);
         }
-        throw err;
+        throw error;
       }
-      return NFS.createReadStream("", {
-        fd: streamFd,
-        encoding: "utf8",
-        autoClose: true,
-      });
     },
     catch: (error) =>
       new BootstrapError({
@@ -144,6 +135,29 @@ const makeBootstrapInputStream = (fd: number) =>
         cause: error,
       }),
   });
+
+const makeDirectBootstrapStream = (fd: number): Readable => {
+  try {
+    return NFS.createReadStream("", {
+      fd,
+      encoding: "utf8",
+      autoClose: true,
+    });
+  } catch {
+    const stream = new Net.Socket({
+      fd,
+      readable: true,
+      writable: false,
+    });
+    stream.setEncoding("utf8");
+    return stream;
+  }
+};
+
+const isBootstrapFdPathDuplicationError = Predicate.compose(
+  Predicate.hasProperty("code"),
+  (_) => _.code === "ENXIO" || _.code === "EINVAL" || _.code === "EPERM",
+);
 
 export function resolveFdPath(
   fd: number,
