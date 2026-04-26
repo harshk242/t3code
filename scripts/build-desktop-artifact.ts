@@ -215,7 +215,8 @@ interface StagePackageJson {
   readonly t3codeCommitHash: string;
   readonly private: true;
   readonly description: string;
-  readonly author: string;
+  readonly homepage: string;
+  readonly author: { readonly name: string; readonly email: string };
   readonly main: string;
   readonly build: Record<string, unknown>;
   readonly dependencies: Record<string, unknown>;
@@ -419,7 +420,9 @@ function stageMacIcons(stageResourcesDir: string, sourcePng: string, verbose: bo
   });
 }
 
-function stageLinuxIcons(stageResourcesDir: string, sourcePng: string) {
+const LINUX_ICON_SIZES = [16, 32, 48, 64, 128, 256, 512] as const;
+
+function stageLinuxIcons(stageResourcesDir: string, sourcePng: string, verbose: boolean) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -429,8 +432,20 @@ function stageLinuxIcons(stageResourcesDir: string, sourcePng: string) {
       });
     }
 
-    const iconPath = path.join(stageResourcesDir, "icon.png");
-    yield* fs.copyFile(sourcePng, iconPath);
+    const iconsDir = path.join(stageResourcesDir, "icons");
+    yield* fs.makeDirectory(iconsDir, { recursive: true });
+
+    // Root icon.png is used by Electron at runtime for the window icon.
+    yield* fs.copyFile(sourcePng, path.join(stageResourcesDir, "icon.png"));
+
+    // Generate standard hicolor sizes so GNOME/desktop environments display the icon.
+    for (const size of LINUX_ICON_SIZES) {
+      yield* runCommand(
+        ChildProcess.make({
+          ...commandOutputOptions(verbose),
+        })`convert ${sourcePng} -resize ${`${size}x${size}`} ${path.join(iconsDir, `${size}x${size}.png`)}`,
+      );
+    }
   });
 }
 
@@ -599,8 +614,9 @@ const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     buildConfig.linux = {
       target: [target],
       executableName: "t3code",
-      icon: "icon.png",
+      icon: "icons",
       category: "Development",
+      maintainer: "T3 Tools <hello@t3.chat>",
       desktop: {
         entry: {
           StartupWMClass: "t3code",
@@ -638,7 +654,7 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
   }
 
   if (platform === "linux") {
-    yield* stageLinuxIcons(stageResourcesDir, iconAssets.linuxIconPng);
+    yield* stageLinuxIcons(stageResourcesDir, iconAssets.linuxIconPng, verbose);
     return;
   }
 
@@ -784,7 +800,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     t3codeCommitHash: commitHash,
     private: true,
     description: "T3 Code desktop build",
-    author: "T3 Tools",
+    homepage: "https://t3.chat",
+    author: { name: "T3 Tools", email: "hello@t3.chat" },
     main: "apps/desktop/dist-electron/main.cjs",
     build: yield* createBuildConfig(
       options.platform,

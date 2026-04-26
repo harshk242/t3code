@@ -19,6 +19,10 @@ This repository is a VERY EARLY WIP. Proposing sweeping changes that improve lon
 
 If a tradeoff is required, choose correctness and robustness over short-term convenience.
 
+## Fork Context
+
+This is a fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code) with Linux `.deb` packaging and GNOME desktop integration. When merging upstream, **read `docs/fork-upstream-merge-guide.md` first** -- it has the decision framework for resolving conflicts and the list of fork-specific changes that must be preserved.
+
 ## Maintainability
 
 Long term maintainability is a core priority. If you add new functionality, first check if there is shared logic that can be extracted to a separate module. Duplicate logic across multiple files is a code smell and should be avoided. Don't be afraid to change existing code. Don't take shortcuts by just adding local logic to solve a problem.
