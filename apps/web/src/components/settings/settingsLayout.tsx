@@ -38,7 +38,7 @@ export function SettingsSection({
         </h2>
         <div className="flex h-5 min-w-5 items-center justify-end">{headerAction}</div>
       </div>
-      <div className="relative overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-sm/4 not-dark:bg-clip-padding before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-2xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:shadow-none dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
+      <div className="relative overflow-visible rounded-2xl border bg-card text-card-foreground shadow-sm/4 not-dark:bg-clip-padding before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-2xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:shadow-none dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
         {children}
       </div>
     </section>
@@ -52,7 +52,9 @@ export function SettingsRow({
   resetAction,
   control,
   children,
-}: {
+  className,
+  ...rowProps
+}: Omit<ComponentPropsWithoutRef<"div">, "title"> & {
   title: ReactNode;
   description: ReactNode;
   status?: ReactNode;
@@ -62,9 +64,11 @@ export function SettingsRow({
 }) {
   return (
     <div
+      {...rowProps}
       className={cn(
         "border-t border-border/60 px-4 first:border-t-0 sm:px-5",
         children ? "pt-3.5 pb-0" : "py-3.5",
+        className,
       )}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -123,7 +127,7 @@ export function SettingsPageContainer({
   className?: string;
 }) {
   return (
-    <div className="flex-1 overflow-y-auto p-6 sm:p-8">
+    <div className="scrollbar-gutter-both flex-1 overflow-y-auto p-6 sm:p-8">
       <div className={cn("mx-auto flex w-full max-w-3xl flex-col gap-8", className)}>
         {children}
       </div>

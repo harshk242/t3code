@@ -63,9 +63,9 @@ When a merge conflict involves a fork-changed file, ask these questions **in ord
 
 If yes: check whether the replacement covers the fork's intent.
 
-| Example | Resolution |
-|---|---|
-| `fixPath.ts` removed, replaced by `syncShellEnvironment.ts` that handles Linux | **Drop fork change** -- upstream solved it differently |
+| Example                                                                                           | Resolution                                                  |
+| ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `fixPath.ts` removed, replaced by `syncShellEnvironment.ts` that handles Linux                    | **Drop fork change** -- upstream solved it differently      |
 | `bootstrap.ts` ENXIO catch, but upstream added `isBootstrapFdPathDuplicationError` covering ENXIO | **Drop fork change** -- upstream's solution is more general |
 
 ### Step 2: Did upstream rewrite the surrounding code?
@@ -97,16 +97,16 @@ Fields like `homepage`, `author.email`, `maintainer`, `desktopName` -- upstream 
 
 ## Quick Reference: Conflict Resolution Table
 
-| File / Area | Fork adds | Upstream tendency | Resolution |
-|---|---|---|---|
-| `scripts/build-desktop-artifact.ts` : `stageLinuxIcons` | Multi-size icon gen + root `icon.png` | Single `icon.png` copy | **Keep fork** (adapt to new signatures) |
-| `scripts/build-desktop-artifact.ts` : linux build config | `icon: "icons"`, `maintainer` | `icon: "icon.png"`, no maintainer | **Keep fork** |
-| `scripts/build-desktop-artifact.ts` : `StagePackageJson` | `homepage`, `author` with email | No homepage, author as string | **Keep fork** |
-| `package.json` : scripts | `dist:desktop:deb` | Will be absent | **Re-add after upstream lines** |
-| `apps/desktop/src/main.ts` : Linux block | `CHROME_DESKTOP` env var | Won't have it | **Keep fork** (usually auto-merges) |
-| `apps/desktop/src/main.ts` : `configureAppIdentity` | `setName(LINUX_WM_CLASS)` on Linux | `setName(APP_DISPLAY_NAME)` | **Keep fork** (usually auto-merges) |
-| `AGENTS.md` | Debugging section | Won't have it | **Keep fork** |
-| `docs/linux-build.md` | Entire file | Won't have it | **Keep fork** |
+| File / Area                                              | Fork adds                             | Upstream tendency                 | Resolution                              |
+| -------------------------------------------------------- | ------------------------------------- | --------------------------------- | --------------------------------------- |
+| `scripts/build-desktop-artifact.ts` : `stageLinuxIcons`  | Multi-size icon gen + root `icon.png` | Single `icon.png` copy            | **Keep fork** (adapt to new signatures) |
+| `scripts/build-desktop-artifact.ts` : linux build config | `icon: "icons"`, `maintainer`         | `icon: "icon.png"`, no maintainer | **Keep fork**                           |
+| `scripts/build-desktop-artifact.ts` : `StagePackageJson` | `homepage`, `author` with email       | No homepage, author as string     | **Keep fork**                           |
+| `package.json` : scripts                                 | `dist:desktop:deb`                    | Will be absent                    | **Re-add after upstream lines**         |
+| `apps/desktop/src/main.ts` : Linux block                 | `CHROME_DESKTOP` env var              | Won't have it                     | **Keep fork** (usually auto-merges)     |
+| `apps/desktop/src/main.ts` : `configureAppIdentity`      | `setName(LINUX_WM_CLASS)` on Linux    | `setName(APP_DISPLAY_NAME)`       | **Keep fork** (usually auto-merges)     |
+| `AGENTS.md`                                              | Debugging section                     | Won't have it                     | **Keep fork**                           |
+| `docs/linux-build.md`                                    | Entire file                           | Won't have it                     | **Keep fork**                           |
 
 ## Post-Merge Verification
 
