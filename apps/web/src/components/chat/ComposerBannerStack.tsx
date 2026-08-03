@@ -16,16 +16,15 @@ const stackedExitStyle = {
 } satisfies CSSProperties;
 const restingStyle = {
   opacity: 1,
-  transform: "translate3d(0, 0, 0)",
+  transform: "none",
 } satisfies CSSProperties;
 const exitTransitionStyle = {
   transition: `transform ${DISMISS_TRANSITION_MS}ms ease-in, opacity ${DISMISS_TRANSITION_MS}ms ease-in`,
-  willChange: "transform, opacity",
 } satisfies CSSProperties;
 
 export interface ComposerBannerStackItem {
   readonly id: string;
-  readonly variant: "error" | "info" | "success" | "warning";
+  readonly variant: "default" | "error" | "info" | "success" | "warning";
   readonly icon: ReactNode;
   readonly title: ReactNode;
   readonly description?: ReactNode;
@@ -94,7 +93,7 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
         {showCollapsedStackCap ? (
           <div
             className={cn(
-              "pointer-events-none absolute inset-x-0 -top-3 z-0 mx-auto h-3 rounded-t-xl",
+              "pointer-events-none absolute inset-x-0 -top-3 z-0 mx-auto h-3 rounded-t-[22px]",
               "border border-b-0 border-warning/24 bg-background/96 shadow-[0_6px_18px_rgba(0,0,0,0.06)]",
               "transition-opacity duration-150 ease-out",
               "group-hover/banner-stack:opacity-0 group-focus-within/banner-stack:opacity-0",
@@ -173,7 +172,11 @@ function ComposerBannerStackAlert({
   const dismissOnly = item.onDismiss && !item.actions;
 
   return (
-    <Alert variant={item.variant} className={item.className}>
+    <Alert
+      variant={item.variant}
+      className={cn("alert-glass rounded-[22px]", item.className)}
+      data-variant={item.variant}
+    >
       {item.icon}
       <AlertTitle>{item.title}</AlertTitle>
       {item.description ? <AlertDescription>{item.description}</AlertDescription> : null}
