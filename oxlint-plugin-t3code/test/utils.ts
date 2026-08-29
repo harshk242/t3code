@@ -38,7 +38,7 @@ class OxlintFixtureExpectedFailure extends Data.TaggedError("OxlintFixtureExpect
   }
 }
 
-const encodeOxlintConfig = Schema.encodeEffect(Schema.UnknownFromJsonString);
+const encodeOxlintConfig = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 interface RuleHarness {
   readonly run: (
@@ -114,6 +114,7 @@ export const createOxlintRuleHarness = (
         rules: { [ruleName]: "error" },
       }),
     );
+    yield* fs.makeDirectory(path.dirname(sourcePath), { recursive: true });
     yield* fs.writeFileString(sourcePath, source);
 
     // Run through the current Node binary: oxlint's bin is an extensionless
