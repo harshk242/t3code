@@ -9,30 +9,32 @@ curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y nodejs
 ```
 
-### 2. Bun 1.3.9+
+### 2. Vite+
 
 ```bash
-curl -fsSL https://bun.sh/install | bash
+curl -fsSL https://vite.plus | bash
 ```
 
 ### 3. Linux build dependencies
 
 ```bash
 sudo apt-get install -y \
+  cargo \
+  rustc \
   build-essential \
-  libssl-dev \
   libfuse2 \
-  python3 \
+  libsecret-1-dev \
+  pkg-config \
   fakeroot \
   imagemagick
 ```
 
-> `fakeroot` and `imagemagick` are only required when building the desktop `.deb` package.
+The desktop build preflight checks the Rust and C toolchains, libsecret headers, pkg-config, and ImageMagick. `fakeroot` is required for `.deb` packaging.
 
 ## Install dependencies
 
 ```bash
-bun install
+vp i
 ```
 
 ## Build options
@@ -40,19 +42,19 @@ bun install
 ### Web + server only (no desktop)
 
 ```bash
-bun run build
+vp run build
 ```
 
 ### Desktop — AppImage
 
 ```bash
-bun run dist:desktop:linux
+vp run dist:desktop:linux
 ```
 
 ### Desktop — `.deb` package
 
 ```bash
-bun run dist:desktop:deb
+vp run dist:desktop:deb
 ```
 
 Add `--verbose` to see full electron-builder output if the build fails.
@@ -60,7 +62,7 @@ Add `--verbose` to see full electron-builder output if the build fails.
 If you've already built once and only want to repackage without a full rebuild:
 
 ```bash
-bun run dist:desktop:deb --skip-build
+vp run dist:desktop:deb --skip-build
 ```
 
 The output artifact is placed in the `release/` directory.
@@ -68,7 +70,7 @@ The output artifact is placed in the `release/` directory.
 ## Installing the `.deb` package
 
 ```bash
-sudo dpkg -i release/T3-Code-0.0.4-alpha.1-amd64.deb
+sudo dpkg -i release/T3-Code-*.deb
 ```
 
 After installing, refresh the icon cache so the app icon appears in your launcher:

@@ -11,13 +11,13 @@ upstream  https://github.com/pingdotgg/t3code.git (source)
 
 ## Fork-Specific Changes
 
-These are the custom changes maintained in this fork. **All exist because upstream only targets macOS (dmg) and Linux AppImage; this fork adds `.deb` packaging and GNOME desktop integration.**
+These are the custom changes maintained in this fork. Upstream targets Linux with AppImage; this fork additionally targets `.deb` and preserves GNOME-specific desktop integration.
 
-### 1. Multi-size Linux icon generation (`scripts/build-desktop-artifact.ts`)
+### 1. Linux icon generation (`scripts/build-desktop-artifact.ts`)
 
-- **What**: `stageLinuxIcons()` generates 16/32/48/64/128/256/512px PNGs via ImageMagick `convert`, plus a root `icon.png` for Electron's runtime window icon. Build config uses `icon: "icons"` (directory) instead of `icon: "icon.png"` (single file).
+- **What**: Upstream now provides `stageLinuxIcons()`, which generates standard-size PNGs via ImageMagick plus a root `icon.png`, and uses the `icons` directory in the Linux build config.
 - **Why**: electron-builder installs icons into `hicolor/` for the `.desktop` entry. A single high-res PNG only creates one size (e.g. 1024x1024) which GNOME ignores -- it needs standard sizes. AppImage doesn't have this problem because it embeds icons differently.
-- **Requires**: `imagemagick` (`convert` command) on the build machine.
+- **Merge rule**: Prefer upstream's implementation while verifying that it still stages the root icon and standard sizes and keeps `icon: "icons"`.
 
 ### 2. Deb build metadata (`scripts/build-desktop-artifact.ts`)
 
@@ -29,9 +29,9 @@ These are the custom changes maintained in this fork. **All exist because upstre
 - **What**: `"dist:desktop:deb": "node scripts/build-desktop-artifact.ts --platform linux --target deb --arch x64"`
 - **Why**: Convenience script to build the `.deb` package. Upstream only has `dist:desktop:linux` (AppImage).
 
-### 4. GNOME dock icon and pinning (`apps/desktop/src/main.ts`)
+### 4. GNOME dock icon and pinning
 
-- **What**: Sets `process.env.CHROME_DESKTOP = LINUX_DESKTOP_ENTRY_NAME` and uses `app.setName(LINUX_WM_CLASS)` on Linux instead of `APP_DISPLAY_NAME`.
+- **What**: `apps/desktop/src/app/DesktopApp.ts` sets `process.env.CHROME_DESKTOP` and the Chromium `class` switch from the Linux desktop identity. `apps/desktop/src/app/DesktopAppIdentity.ts` uses the Linux WM class for `app.setName`.
 - **Why**: GNOME matches running windows to `.desktop` entries using WM_CLASS and the `CHROME_DESKTOP` env var (Chromium/Electron convention). Without these, the app won't pin to the dock correctly and shows a generic icon in the taskbar.
 
 ### 5. Debugging docs (`AGENTS.md`)
@@ -50,7 +50,7 @@ These are the custom changes maintained in this fork. **All exist because upstre
 git fetch upstream
 git merge upstream/main
 # resolve conflicts
-# rebuild: bun install && bun run dist:desktop:deb --verbose
+# rebuild: vp i && vp run dist:desktop:deb --verbose
 # install: sudo dpkg -i release/T3-Code-*.deb
 # verify: icon shows in dock, app launches, pinning works
 ```
@@ -97,23 +97,23 @@ Fields like `homepage`, `author.email`, `maintainer`, `desktopName` -- upstream 
 
 ## Quick Reference: Conflict Resolution Table
 
-| File / Area                                              | Fork adds                             | Upstream tendency                 | Resolution                              |
-| -------------------------------------------------------- | ------------------------------------- | --------------------------------- | --------------------------------------- |
-| `scripts/build-desktop-artifact.ts` : `stageLinuxIcons`  | Multi-size icon gen + root `icon.png` | Single `icon.png` copy            | **Keep fork** (adapt to new signatures) |
-| `scripts/build-desktop-artifact.ts` : linux build config | `icon: "icons"`, `maintainer`         | `icon: "icon.png"`, no maintainer | **Keep fork**                           |
-| `scripts/build-desktop-artifact.ts` : `StagePackageJson` | `homepage`, `author` with email       | No homepage, author as string     | **Keep fork**                           |
-| `package.json` : scripts                                 | `dist:desktop:deb`                    | Will be absent                    | **Re-add after upstream lines**         |
-| `apps/desktop/src/main.ts` : Linux block                 | `CHROME_DESKTOP` env var              | Won't have it                     | **Keep fork** (usually auto-merges)     |
-| `apps/desktop/src/main.ts` : `configureAppIdentity`      | `setName(LINUX_WM_CLASS)` on Linux    | `setName(APP_DISPLAY_NAME)`       | **Keep fork** (usually auto-merges)     |
-| `AGENTS.md`                                              | Debugging section                     | Won't have it                     | **Keep fork**                           |
-| `docs/linux-build.md`                                    | Entire file                           | Won't have it                     | **Keep fork**                           |
+| File / Area                                              | Fork adds                           | Upstream tendency             | Resolution                           |
+| -------------------------------------------------------- | ----------------------------------- | ----------------------------- | ------------------------------------ |
+| `scripts/build-desktop-artifact.ts` : `stageLinuxIcons`  | Upstream multi-size icon generation | May be refactored             | **Prefer upstream; verify behavior** |
+| `scripts/build-desktop-artifact.ts` : linux build config | `maintainer`                        | No maintainer                 | **Keep fork**                        |
+| `scripts/build-desktop-artifact.ts` : `StagePackageJson` | `homepage`, `author` with email     | No homepage, author as string | **Keep fork**                        |
+| `package.json` : scripts                                 | `dist:desktop:deb`                  | Will be absent                | **Re-add after upstream lines**      |
+| `apps/desktop/src/app/DesktopApp.ts` : Linux block       | `CHROME_DESKTOP` and `class`        | Won't have them               | **Keep fork** (usually auto-merges)  |
+| `apps/desktop/src/app/DesktopAppIdentity.ts`             | Linux WM class for `setName`        | Uses display name             | **Keep fork** (usually auto-merges)  |
+| `AGENTS.md`                                              | Debugging section                   | Won't have it                 | **Keep fork**                        |
+| `docs/linux-build.md`                                    | Entire file                         | Won't have it                 | **Keep fork**                        |
 
 ## Post-Merge Verification
 
 After every upstream merge:
 
-1. `bun install` -- new packages may have been added
-2. `bun run dist:desktop:deb --verbose` -- full build
+1. `vp i` -- new packages may have been added
+2. `vp run dist:desktop:deb --verbose` -- full build
 3. `sudo dpkg -i release/T3-Code-*.deb` -- install
 4. `sudo gtk-update-icon-cache -f -t /usr/share/icons/hicolor` -- refresh icon cache
 5. Verify: app icon visible in launcher, app launches, dock pinning works
