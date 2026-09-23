@@ -180,16 +180,25 @@ describe("DesktopLinuxUrlHandler", () => {
     });
   });
 
-  it.effect("falls back to the process executable outside an AppImage", () => {
+  it.effect("registers the Debian package's installed launcher without shadowing its icon", () => {
     const recorded = emptyRecording();
 
     return Effect.gen(function* () {
-      yield* runRegister(recorded, { environment: { appImagePath: Option.none() } });
+      yield* runRegister(recorded, {
+        environment: {
+          appImagePath: Option.none(),
+          linuxDesktopEntryName: "t3code.desktop",
+        },
+      });
 
-      assert.include(
-        recorded.files[0]?.content,
-        `Exec=${DesktopLinuxUrlHandler.escapeDesktopEntryExecArgument(process.execPath)} %U`,
-      );
+      assert.deepEqual(recorded.directories, []);
+      assert.deepEqual(recorded.files, []);
+      assert.deepEqual(recorded.commands, [
+        {
+          command: "xdg-mime",
+          args: ["default", "t3code.desktop", "x-scheme-handler/t3code"],
+        },
+      ]);
     });
   });
 

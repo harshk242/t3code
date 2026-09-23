@@ -11,7 +11,7 @@ import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import { makeComponentLogger } from "./DesktopObservability.ts";
 
-// Linux ships as an AppImage, so the .desktop entry users end up with is
+// AppImage launchers have integration-dependent names, so the .desktop entry users end up with is
 // created by whatever integration tool they use (AppImageLauncher names it
 // appimagekit_<hash>-….desktop) and its filename is not under our control.
 // Electron's app.setAsDefaultProtocolClient resolves the desktop id from
@@ -168,7 +168,11 @@ export const make = Effect.gen(function* () {
     if (environment.platform !== "linux") {
       return;
     }
-    yield* writeDesktopEntry;
+    // Debian installs t3code.desktop with the application icon. A user-local
+    // handler with the same name would shadow it and break dock matching.
+    if (environment.isDevelopment || Option.isSome(environment.appImagePath)) {
+      yield* writeDesktopEntry;
+    }
     if (!environment.isPackaged) return;
     yield* setDefaultHandler;
     yield* logInfo("registered URL scheme handler", { scheme });

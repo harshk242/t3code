@@ -111,6 +111,29 @@ describe("DesktopPreReadyPlatform", () => {
     );
   }
 
+  it.effect("uses the installed Debian launcher without creating a user-local shadow", () => {
+    vi.stubEnv("VITE_DEV_SERVER_URL", "");
+    vi.stubEnv("APPIMAGE", "");
+    vi.stubEnv("XDG_DATA_HOME", "/xdg");
+
+    return DesktopPreReadyPlatform.make.pipe(
+      Effect.provideService(HostProcessPlatform, "linux"),
+      Effect.tap(() =>
+        Effect.sync(() => {
+          assert.deepEqual(setDesktopNameMock.mock.calls, [["t3code.desktop"]]);
+          assert.isTrue(
+            appendSwitchMock.mock.calls.some(
+              ([name, value]) => name === "class" && value === "t3code",
+            ),
+          );
+          assert.equal(mkdirSyncMock.mock.calls.length, 0);
+          assert.equal(writeFileSyncMock.mock.calls.length, 0);
+        }),
+      ),
+      Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())),
+    );
+  });
+
   it.effect("keeps startup available when the early desktop entry cannot be written", () => {
     getSwitchValueMock.mockReturnValue("");
     mkdirSyncMock.mockImplementation(() => {

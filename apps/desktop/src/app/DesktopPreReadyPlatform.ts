@@ -61,27 +61,30 @@ export const make = Effect.gen(function* () {
     if (linux !== null) {
       // The portal also requires a valid desktop entry. An AppImage update may
       // have removed the executable referenced by the previous launch's entry.
-      try {
-        const applicationsDir = NodePath.posix.join(
-          process.env.XDG_DATA_HOME?.trim() ||
-            NodePath.posix.join(NodeOS.homedir(), ".local", "share"),
-          "applications",
-        );
-        NodeFS.mkdirSync(applicationsDir, { recursive: true });
-        NodeFS.writeFileSync(
-          NodePath.posix.join(applicationsDir, linux.linuxDesktopEntryName),
-          renderUrlHandlerDesktopEntry({
-            displayName: resolveDesktopAppBranding({
-              isDevelopment: linux.isDevelopment,
-              appVersion: Electron.app.getVersion(),
-            }).displayName,
-            execTarget: process.env.APPIMAGE?.trim() || process.execPath,
-            scheme: ElectronProtocol.getDesktopScheme(linux.isDevelopment),
-          }),
-          "utf8",
-        );
-      } catch {
-        // The URL handler retries with the full environment and logs failures.
+      // Debian already installs the entry; a user-local copy would shadow its icon.
+      if (linux.needsUrlHandlerDesktopEntry) {
+        try {
+          const applicationsDir = NodePath.posix.join(
+            process.env.XDG_DATA_HOME?.trim() ||
+              NodePath.posix.join(NodeOS.homedir(), ".local", "share"),
+            "applications",
+          );
+          NodeFS.mkdirSync(applicationsDir, { recursive: true });
+          NodeFS.writeFileSync(
+            NodePath.posix.join(applicationsDir, linux.linuxDesktopEntryName),
+            renderUrlHandlerDesktopEntry({
+              displayName: resolveDesktopAppBranding({
+                isDevelopment: linux.isDevelopment,
+                appVersion: Electron.app.getVersion(),
+              }).displayName,
+              execTarget: process.env.APPIMAGE?.trim() || process.execPath,
+              scheme: ElectronProtocol.getDesktopScheme(linux.isDevelopment),
+            }),
+            "utf8",
+          );
+        } catch {
+          // The URL handler retries with the full environment and logs failures.
+        }
       }
       // Chromium caches its portal registration during startup. Set the identity
       // before any asynchronous work can initialize it with Electron's default.

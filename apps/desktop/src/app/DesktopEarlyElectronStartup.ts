@@ -26,13 +26,21 @@ type EarlyLinuxElectronOptionsInput = EarlyDesktopSettingsInput;
 
 export interface EarlyLinuxElectronOptions {
   readonly isDevelopment: boolean;
+  readonly needsUrlHandlerDesktopEntry: boolean;
   readonly linuxWmClass: string;
   readonly linuxDesktopEntryName: string;
   readonly passwordStore: LinuxPasswordStoreSwitch | null;
 }
 
-export const resolveLinuxDesktopEntryName = (isDevelopment: boolean): string =>
-  isDevelopment ? "com.t3tools.T3Code.Development.desktop" : "com.t3tools.T3Code.desktop";
+export const resolveLinuxDesktopEntryName = (
+  isDevelopment: boolean,
+  isAppImage: boolean,
+): string =>
+  isDevelopment
+    ? "com.t3tools.T3Code.Development.desktop"
+    : isAppImage
+      ? "com.t3tools.T3Code.desktop"
+      : "t3code.desktop";
 
 const trimNonEmpty = (value: string | undefined): string | null => {
   const trimmed = value?.trim();
@@ -86,10 +94,13 @@ export function resolveEarlyLinuxElectronOptions(
 ): EarlyLinuxElectronOptions {
   const preference = resolveEarlyLinuxPasswordStorePreference(input);
   const isDevelopment = isDevelopmentEnvironment(input.env);
+  const isAppImage = trimNonEmpty(input.env.APPIMAGE) !== null;
+  const needsUrlHandlerDesktopEntry = isDevelopment || isAppImage;
   return {
     isDevelopment,
+    needsUrlHandlerDesktopEntry,
     linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
-    linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
+    linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment, isAppImage),
     passwordStore: resolveLinuxPasswordStoreSwitch({
       preference,
       env: input.env,

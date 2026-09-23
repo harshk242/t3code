@@ -138,14 +138,30 @@ describe("DesktopEnvironment", () => {
     }),
   );
 
-  it.effect("uses the stable desktop entry as the packaged Linux portal identity", () =>
+  it.effect("uses the installed Debian desktop entry as the packaged Linux portal identity", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment({
         platform: "linux",
         isPackaged: true,
-        appPath: "/tmp/.mount_t3code/resources/app.asar",
-        resourcesPath: "/tmp/.mount_t3code/resources",
+        appPath: "/opt/T3 Code (Alpha)/resources/app.asar",
+        resourcesPath: "/opt/T3 Code (Alpha)/resources",
       });
+
+      assert.equal(environment.linuxDesktopEntryName, "t3code.desktop");
+    }),
+  );
+
+  it.effect("retains the generated AppImage desktop entry identity", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        {
+          platform: "linux",
+          isPackaged: true,
+          appPath: "/tmp/.mount_t3code/resources/app.asar",
+          resourcesPath: "/tmp/.mount_t3code/resources",
+        },
+        { APPIMAGE: "/home/alice/Applications/T3-Code.AppImage" },
+      );
 
       assert.equal(environment.linuxDesktopEntryName, "com.t3tools.T3Code.desktop");
     }),

@@ -23,6 +23,7 @@ These are the custom changes maintained in this fork. Upstream targets Linux wit
 
 - **What**: `StagePackageJson` interface and construction include `homepage` and structured `author` (with email). Linux build config includes `maintainer`.
 - **Why**: electron-builder's FPM/deb target requires these fields and will error without them. AppImage and dmg targets don't need them, so upstream omits them.
+- **Desktop identity**: The deb also stages `desktopName: "t3code.desktop"` and sets `linux.syncDesktopName: true`, so electron-builder's metadata agrees with the installed launcher. These are for GNOME integration, not FPM requirements.
 
 ### 3. `dist:desktop:deb` script (`package.json`)
 
@@ -31,8 +32,8 @@ These are the custom changes maintained in this fork. Upstream targets Linux wit
 
 ### 4. GNOME dock icon and pinning
 
-- **What**: `apps/desktop/src/app/DesktopApp.ts` sets `process.env.CHROME_DESKTOP` and the Chromium `class` switch from the Linux desktop identity. `apps/desktop/src/app/DesktopAppIdentity.ts` uses the Linux WM class for `app.setName`.
-- **Why**: GNOME matches running windows to `.desktop` entries using WM_CLASS and the `CHROME_DESKTOP` env var (Chromium/Electron convention). Without these, the app won't pin to the dock correctly and shows a generic icon in the taskbar.
+- **What**: The deb installs `t3code.desktop` with `Icon=t3code` and `StartupWMClass=t3code`. Early Electron startup selects `t3code.desktop` for the deb; `DesktopApp.ts` sets `CHROME_DESKTOP` and the Chromium `class` switch, and `DesktopAppIdentity.ts` sets the app name to match. The deb must not generate a second, iconless user-local desktop entry. AppImage and development builds retain their generated entries.
+- **Why**: GNOME must associate the running window with the installed launcher. The original 0.0.40 deb renamed the launcher from `t3code.desktop` to `com.t3tools.T3Code.desktop`, and startup created a user-local entry with that same name but no icon. That shadow entry caused the generic gear icon in the dock, even though the application menu icon was correct.
 
 ### 5. Debugging docs (`AGENTS.md`)
 
@@ -77,16 +78,16 @@ If upstream restructured function signatures, moved parameters, or changed archi
 
 ### Step 3: Is the fork change deb-specific metadata?
 
-Fields like `homepage`, `author.email`, `maintainer`, `desktopName` -- upstream will drop these because they don't build debs.
+Fields like `homepage`, `author.email`, `maintainer`, and `desktopName` -- upstream may drop these because they don't build debs.
 
-- **Always re-add them.** They are required by electron-builder's FPM target.
+- **Re-add them when missing.** `homepage`, `author.email`, and `maintainer` are required by electron-builder's FPM target. `desktopName` and `linux.syncDesktopName` keep the deb's desktop identity aligned.
 - If upstream changed the `StagePackageJson` interface or `createBuildConfig`, add the fields to the new structure.
 
 ### Step 4: Is it a Linux desktop integration change?
 
-`CHROME_DESKTOP`, `app.setName(LINUX_WM_CLASS)`, `icon: "icons"` -- upstream doesn't test on GNOME/Ubuntu and may inadvertently revert these.
+`CHROME_DESKTOP`, `app.setName(LINUX_WM_CLASS)`, the early desktop name, URL-handler entry behavior, and `icon: "icons"` -- upstream may inadvertently revert these.
 
-- **Keep fork changes** unless upstream has explicitly added equivalent GNOME integration (check their PRs/commit messages for "GNOME", "dock", "WM_CLASS", "desktop entry").
+- **Keep fork changes** unless upstream has explicitly added equivalent GNOME integration (check their PRs/commit messages for "GNOME", "dock", "WM_CLASS", "desktop entry"). In particular, do not let a generated user-local entry shadow the deb's installed `t3code.desktop`.
 - These typically auto-merge cleanly since upstream rarely touches the same lines.
 
 ### Step 5: Is it documentation?
@@ -97,16 +98,17 @@ Fields like `homepage`, `author.email`, `maintainer`, `desktopName` -- upstream 
 
 ## Quick Reference: Conflict Resolution Table
 
-| File / Area                                              | Fork adds                           | Upstream tendency             | Resolution                           |
-| -------------------------------------------------------- | ----------------------------------- | ----------------------------- | ------------------------------------ |
-| `scripts/build-desktop-artifact.ts` : `stageLinuxIcons`  | Upstream multi-size icon generation | May be refactored             | **Prefer upstream; verify behavior** |
-| `scripts/build-desktop-artifact.ts` : linux build config | `maintainer`                        | No maintainer                 | **Keep fork**                        |
-| `scripts/build-desktop-artifact.ts` : `StagePackageJson` | `homepage`, `author` with email     | No homepage, author as string | **Keep fork**                        |
-| `package.json` : scripts                                 | `dist:desktop:deb`                  | Will be absent                | **Re-add after upstream lines**      |
-| `apps/desktop/src/app/DesktopApp.ts` : Linux block       | `CHROME_DESKTOP` and `class`        | Won't have them               | **Keep fork** (usually auto-merges)  |
-| `apps/desktop/src/app/DesktopAppIdentity.ts`             | Linux WM class for `setName`        | Uses display name             | **Keep fork** (usually auto-merges)  |
-| `AGENTS.md`                                              | Debugging section                   | Won't have it                 | **Keep fork**                        |
-| `docs/linux-build.md`                                    | Entire file                         | Won't have it                 | **Keep fork**                        |
+| File / Area                                                                                                      | Fork adds                                                 | Upstream tendency                                  | Resolution                           |
+| ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------- | ------------------------------------ |
+| `scripts/build-desktop-artifact.ts` : `stageLinuxIcons`                                                          | Upstream multi-size icon generation                       | May be refactored                                  | **Prefer upstream; verify behavior** |
+| `scripts/build-desktop-artifact.ts` : linux build config                                                         | `maintainer`, deb desktop-name sync                       | No maintainer or deb identity                      | **Keep fork**                        |
+| `scripts/build-desktop-artifact.ts` : `StagePackageJson`                                                         | `homepage`, `author` with email, deb `desktopName`        | No deb metadata                                    | **Keep fork**                        |
+| `package.json` : scripts                                                                                         | `dist:desktop:deb`                                        | Will be absent                                     | **Re-add after upstream lines**      |
+| `apps/desktop/src/app/DesktopApp.ts` : Linux block                                                               | `CHROME_DESKTOP` and `class`                              | Won't have them                                    | **Keep fork** (usually auto-merges)  |
+| `apps/desktop/src/app/DesktopAppIdentity.ts`                                                                     | Linux WM class for `setName`                              | Uses display name                                  | **Keep fork** (usually auto-merges)  |
+| `apps/desktop/src/app/DesktopEarlyElectronStartup.ts`, `DesktopPreReadyPlatform.ts`, `DesktopLinuxUrlHandler.ts` | Deb uses installed entry; AppImage/dev generate their own | May create a user-local entry for all Linux builds | **Keep fork**                        |
+| `AGENTS.md`                                                                                                      | Debugging section                                         | Won't have it                                      | **Keep fork**                        |
+| `docs/linux-build.md`                                                                                            | Entire file                                               | Won't have it                                      | **Keep fork**                        |
 
 ## Post-Merge Verification
 

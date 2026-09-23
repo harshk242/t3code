@@ -594,6 +594,15 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         undefined,
         undefined,
       );
+      const deb = yield* createBuildConfig(
+        "linux",
+        "deb",
+        "1.2.3",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
       const win = yield* createBuildConfig(
         "win",
         "nsis",
@@ -621,6 +630,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.notProperty(linux, "asar");
       assert.notProperty(mac, "asarUnpack");
       assert.notProperty(linux, "asarUnpack");
+      assert.notProperty(linux.linux as object, "syncDesktopName");
+      assert.deepInclude(deb.linux, { syncDesktopName: true, executableName: "t3code" });
       assert.deepStrictEqual(win.asar, { smartUnpack: false });
       assert.deepStrictEqual(win.asarUnpack, [WINDOWS_NATIVE_ASAR_UNPACK_GLOB]);
       assert.deepStrictEqual(winWithoutWslRuntime.asar, win.asar);

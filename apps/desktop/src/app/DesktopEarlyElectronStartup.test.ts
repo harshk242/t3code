@@ -82,10 +82,36 @@ describe("DesktopEarlyElectronStartup", () => {
 
     assert.deepEqual(options, {
       isDevelopment: true,
+      needsUrlHandlerDesktopEntry: true,
       linuxWmClass: "t3code-dev",
       linuxDesktopEntryName: "com.t3tools.T3Code.Development.desktop",
       passwordStore: "gnome-libsecret",
     });
+  });
+
+  it("uses the installed Debian desktop entry when APPIMAGE is absent", () => {
+    const options = resolveEarlyLinuxElectronOptions({
+      env: {},
+      homeDirectory: "/home/user",
+      joinPath,
+      readFileString: () => "{}",
+    });
+
+    assert.equal(options.linuxDesktopEntryName, "t3code.desktop");
+    assert.equal(options.linuxWmClass, "t3code");
+    assert.isFalse(options.needsUrlHandlerDesktopEntry);
+  });
+
+  it("keeps the AppImage desktop identity and generated handler", () => {
+    const options = resolveEarlyLinuxElectronOptions({
+      env: { APPIMAGE: "/home/user/Applications/T3-Code.AppImage" },
+      homeDirectory: "/home/user",
+      joinPath,
+      readFileString: () => "{}",
+    });
+
+    assert.equal(options.linuxDesktopEntryName, "com.t3tools.T3Code.desktop");
+    assert.isTrue(options.needsUrlHandlerDesktopEntry);
   });
 
   it("keeps implicit development state under ~/.t3/dev when T3CODE_HOME is unset", () => {

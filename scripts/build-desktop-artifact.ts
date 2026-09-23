@@ -931,6 +931,7 @@ interface StagePackageJson {
   readonly description: string;
   readonly homepage: string;
   readonly author: { readonly name: string; readonly email: string };
+  readonly desktopName?: string;
   readonly main: string;
   readonly build: Record<string, unknown>;
   readonly dependencies: Record<string, unknown>;
@@ -2737,6 +2738,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: [target],
       executableName: "t3code",
       icon: "icons",
+      ...(target === "deb" ? { syncDesktopName: true } : {}),
       category: "Development",
       maintainer: "T3 Tools <hello@t3.chat>",
       // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
@@ -3655,6 +3657,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     description: "T3 Code desktop build",
     homepage: "https://t3.chat",
     author: { name: "T3 Tools", email: "hello@t3.chat" },
+    ...(options.platform === "linux" && options.target === "deb"
+      ? { desktopName: "t3code.desktop" }
+      : {}),
     main: "apps/desktop/dist-electron/main.cjs",
     build: yield* createBuildConfig(
       options.platform,
